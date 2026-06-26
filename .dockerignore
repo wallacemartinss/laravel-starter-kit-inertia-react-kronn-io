@@ -1,0 +1,52 @@
+# Version control
+.git
+.gitignore
+
+# Dependencies (copied from build stages)
+vendor
+node_modules
+packages/*/vendor
+
+# Built assets (copied from assets stage)
+public/build/
+
+# Vite dev server sentinel (if left over from `npm run dev`,
+# @vite() would route all asset URLs to http://localhost:5173 and break prod)
+public/hot
+
+# Storage contents (keep directory structure, exclude runtime data)
+storage/logs/*
+storage/framework/cache/*
+storage/framework/sessions/*
+storage/framework/views/*
+storage/app/private/*
+storage/app/public/*
+
+# Bootstrap cache (generated at runtime)
+bootstrap/cache/*.php
+
+# Tests (not needed in production)
+tests/
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+secrets.txt
+
+# Claude / IDE
+.claude/
+.idea/
+.vscode/
+
+# Logs and caches
+*.log
+npm-debug.log*
+
+# Docker files (not needed inside container)
+docker-compose*.yml
+Dockerfile
+.dockerignore
+
+# Docs / project meta (not needed inside the runtime image)
+ARCHITECTURE.md
