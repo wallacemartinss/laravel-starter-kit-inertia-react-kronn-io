@@ -13,9 +13,6 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  # Deriva owner/repo automaticamente do repositório (ex.: paroquia-sao-benedito/pascom).
-  # O metadata-action faz lowercase do nome, então é seguro mesmo se o owner/repo
-  # tiver maiúsculas. Renomeie o repositório no GitHub para mudar o nome da imagem.
   IMAGE_NAME: ${{ github.repository }}
 
 permissions:
@@ -39,25 +36,11 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Log in to GHCR
-        # GITHUB_TOKEN é auto-gerado por run, com escopo packages:write
-        # (declarado em `permissions` acima). Não precisa configurar
-        # secret na org — funciona out-of-the-box. Trocar pra um PAT
-        # só se for publicar em uma org/repo DIFERENTE deste workflow.
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Write composer auth to file
-        # `secrets:` inline do build-push-action mangle JSON multilinha.
-        # Gravando num arquivo + secret-files preserva 100% do conteúdo.
-        # O runner é descartável; o arquivo morre junto com a VM.
-        run: |
-          printf '%s' '${{ secrets.COMPOSER_AUTH }}' > /tmp/composer-auth.json
-          # Sanity check (sem expor o conteúdo nos logs):
-          test -s /tmp/composer-auth.json || { echo "COMPOSER_AUTH secret vazio"; exit 1; }
-          jq empty /tmp/composer-auth.json || { echo "COMPOSER_AUTH não é JSON válido"; exit 1; }
 
       - name: Extract metadata (tags, labels)
         id: meta
@@ -87,20 +70,9 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             IMAGE_SOURCE=https://github.com/${{ github.repository }}
-            DB_DRIVERS=pgsql
-            EXTRA_PECL=redis
+            DB_DRIVERS=sqlite pgsql mysql
+            EXTRA_PECL=
             EXTRA_EXT=
-          # auth.json com credenciais de algum registry Composer privado, se o
-          # composer.json ainda referenciar pacote privado. O mount no Dockerfile
-          # é `required=false`, então o build funciona mesmo sem o secret — se
-          # não houver mais pacote privado (o tema Filament foi removido), dá pra
-          # apagar este bloco + a step "Write composer auth" + o secret no GitHub.
-          # O Dockerfile consome via `--mount=type=secret,id=composer_auth` — não
-          # vaza pra nenhuma layer da imagem final. Usamos `secret-files`
-          # (arquivo) em vez de `secrets:` (inline) porque JSON com
-          # múltiplos pares quebra o parser quando passado inline.
-          secret-files: |
-            composer_auth=/tmp/composer-auth.json
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

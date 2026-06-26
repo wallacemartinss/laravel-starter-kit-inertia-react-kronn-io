@@ -3,59 +3,54 @@ set -e
 
 cd /var/www/html
 
-# ---- Storage structure (volume pode montar vazio) ----
-mkdir -p \
-    storage/app/public \
-    storage/framework/cache/data \
-    storage/framework/sessions \
-    storage/framework/testing \
-    storage/framework/views \
-    storage/logs \
-    bootstrap/cache
+ROLE="${1:-web}"
 
-chown -R www-data:www-data storage bootstrap/cache
-chmod -R 775 storage bootstrap/cache
+prepare_storage() {
+    mkdir -p \
+        storage/app/public \
+        storage/framework/cache/data \
+        storage/framework/sessions \
+        storage/framework/views \
+        storage/logs \
+        bootstrap/cache
 
-# ---- Supervisor log dir ----
-mkdir -p /var/log/supervisor
+    chown -R www-data:www-data storage bootstrap/cache database
+    chmod -R ug+rwX storage bootstrap/cache database
+}
 
-# ---- .env ----
-if [ ! -f .env ]; then
-    cp .env.example .env
-fi
+run_bootstrap_tasks() {
+    if [ "${RUN_MIGRATIONS:-false}" = "true" ]; then
+        php artisan migrate --force --isolated || php artisan migrate --force
+    fi
 
-# ---- APP_KEY ----
-if [ -z "$APP_KEY" ] && ! grep -q "APP_KEY=base64:" .env; then
-    php artisan key:generate --force
-fi
+    if [ "${RUN_STORAGE_LINK:-true}" = "true" ]; then
+        php artisan storage:link --force 2>/dev/null || true
+    fi
 
-# ---- Database ----
-# `--isolated` usa cache lock pra impedir duas instâncias migrarem ao
-# mesmo tempo (single-instance hoje, mas evita corrida se um dia o
-# Traefik subir uma 2ª réplica antes do primeiro acabar). Se o cache
-# driver não suportar locks, cai pro migrate normal.
-php artisan migrate --force --isolated || php artisan migrate --force
+    if [ "${RUN_LARAVEL_OPTIMIZE:-true}" = "true" ]; then
+        php artisan optimize:clear
+        php artisan optimize
+    fi
+}
 
-# ---- Symlink storage → public/storage ----
-# Sem isso, /storage/{path} retorna 404 em prod. A galeria privada e os
-# uploads em storage/app/public dependem desse link. --force porque o COPY do
-# build pode trazer o symlink quebrado ou ausente.
-php artisan storage:link --force 2>/dev/null || true
+prepare_storage
+run_bootstrap_tasks
 
-# ---- Production seed (idempotente) ----
-# ProductionSeeder usa firstOrCreate/updateOrCreate em todos os seeders
-# que chama (Admin, Pastoral, Location, Position, ProductionEvent,
-# SiteSetting, PrayerReactionType). Roda em todo boot sem efeito
-# colateral — atualiza configs se vierem novas no deploy.
-#
-# NÃO usar `db:seed` puro (esse chama DatabaseSeeder que tem UserSeeder
-# com Faker — quebra em --no-dev). Sempre --class explícito.
-php artisan db:seed --class=ProductionSeeder --force 2>&1 | tail -20
+case "$ROLE" in
+    web)
+        php-fpm -D
+        exec nginx -g "daemon off;"
+        ;;
 
-# ---- Cache (produção) ----
-php artisan optimize:clear
-php artisan optimize
-php artisan route:clear 2>/dev/null || true
+    queue)
+        exec php artisan queue:work --sleep="${QUEUE_SLEEP:-3}" --tries="${QUEUE_TRIES:-3}" --max-time="${QUEUE_MAX_TIME:-3600}"
+        ;;
 
-# ---- Start services via Supervisor ----
-exec supervisord -c /etc/supervisor/conf.d/supervisord.conf
+    scheduler)
+        exec php artisan schedule:work
+        ;;
+
+    *)
+        exec "$@"
+        ;;
+esac
