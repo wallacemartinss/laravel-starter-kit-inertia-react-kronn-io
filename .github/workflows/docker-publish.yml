@@ -71,7 +71,7 @@ jobs:
           build-args: |
             IMAGE_SOURCE=https://github.com/${{ github.repository }}
             DB_DRIVERS=sqlite pgsql mysql
-            EXTRA_PECL=
+            EXTRA_PECL=redis
             EXTRA_EXT=
           cache-from: type=gha
           cache-to: type=gha,mode=max
